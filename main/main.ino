@@ -37,22 +37,21 @@ byte avg[] = {
   B10000
 };
 
-volatile double fuel_injected = 0.0;   // in liters
+// Configuration parameters BEGIN
+int measureTime = 1000;
+// Configuration parameters END
+
+volatile double fuel_injected = 0.0;  // in liters
 
 volatile long consumption_time = 0;
 volatile long consumption_period = 0;
 volatile float dutyCycle = 0.0;
-volatile long ontime = 0;
 float multiplier = 93.7;              // dutyCycle * multiplier = l/h
 
 volatile long distance_abs = 0;       // in centimeters
-volatile long distance_time = 0;
-volatile int speed = 0;
 
-// Speed after which there should be l/100km instead of l/h
-float min_speed = 10;
-
-int distance_per_tick = 24; //in centimeters
+float min_speed = 3;                 // Speed after which there should be l/100km instead of l/h
+int distance_per_tick = 24;           //in centimeters
 
 void setup() {
   Serial.begin(115200);
@@ -77,27 +76,22 @@ void consumption_rising() {
 }
  
 void consumption_falling() {
-  dutyCycle = min(1, (float)(micros() - consumption_time) / (float)consumption_period);
+  dutyCycle = (float)(micros() - consumption_time) / (float)consumption_period;
 
-  // Calculate fuel injected in this consumption cycle
-  double fuel_injected_in_cycle = dutyCycle * multiplier * (float)consumption_period / 3600000000;
   // Increase total injected fuel
-  fuel_injected += fuel_injected_in_cycle;
+  fuel_injected += dutyCycle * multiplier * (float)consumption_period / 3600000000;
   attachInterrupt(digitalPinToInterrupt(2), consumption_rising, RISING);
 }
 
 void distance_tick() {
-  long time_between = millis()-distance_time;
-  distance_time = millis();
-  speed = 36.0 * (float)distance_per_tick / (float)time_between;
   distance_abs += distance_per_tick;
 }
 
-int consumptionPadding(float consumption) {
+String consumptionPadding(float consumption) {
   if(consumption < 10) {
-    return 1;
+    return "  ";
   } else {
-    return 0;
+    return " ";
   }
 }
 
@@ -107,75 +101,84 @@ String formatConsumption(float consumption) {
   return outStr;
 }
 
-String unit() {
+String unit(int speed) {
   if(speed > min_speed) {
-    return "l/100km";
+    return " l/100km";
   } else {
-    return "l/h    ";
+    return " l/h    ";
   }
 }
 
-int samples = 20;
-
-float currentAcc = 0.0;
-float currentSum = 0.0;
-int currentCount = 0;
-
-float getCurrent() {
-  float currentPerHour = (float)dutyCycle * multiplier;
-  float toReturn = 0.0;
+float getCurrent(int speed) {
+  long time_start = millis();
+  float fuel_injected_start = fuel_injected;
+  delay(measureTime);
+  long time_end = millis() - time_start;
+  float injectedPerSecond = 1000 * (fuel_injected - fuel_injected_start) / time_end;
+  
+  float currentPerHour = injectedPerSecond * 3600;
+  float toRet = 0.0;
 
   if(speed > min_speed) {
-    toReturn = currentPerHour * 100 / (float)speed;
+    toRet = currentPerHour * 100 / (float)speed;
   } else {
-    toReturn = currentPerHour;
+    toRet = currentPerHour;
   }
 
-  currentAcc += toReturn;
-  currentCount++;
-
-  if(currentCount >= samples) {
-    currentSum = currentAcc / currentCount;
-    currentAcc = 0.0;
-    currentCount = 0;
+  if(toRet < 100) {
+    return toRet;
+  } else {
+    return 99.9;
   }
-
-  return currentSum;
 }
 
 float getAverage() {
   float distance_km = (float)distance_abs / 100000;
-  return fuel_injected / distance_km;
+  float toRet = 100 * fuel_injected / distance_km;
+
+  if(toRet < 100) {
+    return toRet;
+  } else {
+    return 99.9;
+  }
+}
+
+// Get speed in km/h
+int getSpeed() {
+  long time_start = millis();
+  long distance_start = distance_abs;
+  delay(measureTime);
+  long time_end = millis() - time_start;
+  long distance = (float)(distance_abs - distance_start) / 100.0;   // in meters
+  return (3600 * distance) / time_end;
 }
 
 void loop() {
-  lcd.clear();
-  
-  float current = getCurrent();
+  int speed = getSpeed();
+  float current = getCurrent(speed);
   float average = getAverage();
   
   // Print current
   lcd.setCursor(0, 0);
   lcd.write(0);
   lcd.write(1);
-  lcd.setCursor(3 + consumptionPadding(current), 0);
+  lcd.print(consumptionPadding(current));
   lcd.print(formatConsumption(current)); 
-  lcd.setCursor(8,0);
-  lcd.print(unit());
+  lcd.print(unit(speed));
 
-  // Print average
-  lcd.setCursor(0, 1);
-  lcd.write(2);
-  lcd.setCursor(3 + consumptionPadding(average), 1);
-  lcd.print(average); 
-  lcd.setCursor(8,1);
-  lcd.print("l/100km");
-
-  delay(2000);
-
-  //delay(1000);
-
-  // Print speed
+  if(distance_abs > 0) {
+    // Print average
+    lcd.setCursor(0, 1);
+    lcd.write(2);
+    lcd.print(" ");
+    lcd.print(consumptionPadding(average));
+    lcd.print(formatConsumption(average));
+    lcd.print(" l/100km");
+  }
+//
+//  delay(1000);
+//
+//  // Print speed
 //  lcd.clear();
 //  lcd.setCursor(0, 0);
 //  lcd.print("Geschwindigkeit:");
