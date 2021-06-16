@@ -103,9 +103,9 @@ String formatConsumption(float consumption) {
 
 String unit(int speed) {
   if(speed > min_speed) {
-    return " l/100km";
+    return " l/100km ";
   } else {
-    return " l/h    ";
+    return " l/h     ";
   }
 }
 
@@ -143,6 +143,76 @@ float getAverage() {
   }
 }
 
+void checkForReset() {
+  long start = millis();
+  bool reset = false;
+  Serial.println("Checking for reset...");
+  while(millis() - start < 2000) {
+    if(!digitalRead(3) && millis() - start > 200) {
+      Serial.println("Passed 1/4");
+      reset = true;
+      break;
+    }
+  }
+
+  if(!reset) {
+    return;
+  }
+
+  reset = false;
+  start = millis();
+  while(millis() - start < 2000) {
+    if(digitalRead(3) && millis() - start > 200) {
+      Serial.println("Passed 2/4");
+      reset = true;
+      break;
+    }
+  }
+
+  if (!reset) {
+    return;
+  }
+
+  reset = false;
+  start = millis();
+  while(millis() - start < 2000) {
+    if(!digitalRead(3) && millis() - start > 200) {
+      Serial.println("Passed 3/4");
+      reset = true;
+      break;
+    }
+  }
+
+  if(!reset) {
+    return;
+  }
+
+  reset = false;
+  start = millis();
+  while(millis() - start < 2000) {
+    if(digitalRead(3) && millis() - start > 200) {
+      Serial.println("Passed 4/4");
+      reset = true;
+      break;
+    }
+  }
+
+  if(!reset) {
+    return;
+  }
+
+  lcd.clear();
+  lcd.backlight();
+  delay(1000);
+  lcd.setCursor(0,0);
+  Serial.println("Resetting...");
+  lcd.print("Resetting...");
+  distance_abs = 0;
+  fuel_injected = 0;
+  delay(1000);
+  lcd.clear();
+}
+
 // Get speed in km/h
 int getSpeed() {
   long time_start = millis();
@@ -154,38 +224,52 @@ int getSpeed() {
 }
 
 void loop() {
-  int speed = getSpeed();
-  float current = getCurrent(speed);
-  float average = getAverage();
+  if(!digitalRead(3)) {
+    long start = millis();
+    while(!digitalRead(3) && (millis() - start) < 1000) {}
+    if(millis() - start > 900) {
+      lcd.clear();
+      lcd.noBacklight();
+      while(!digitalRead(3)) {
+        delay(1000);
+      }
+      checkForReset();
+      lcd.backlight();
+    }
+  } else {
+    int speed = getSpeed();
+    float current = getCurrent(speed);
+    float average = getAverage();
+    
+    // Print current
+    lcd.setCursor(0, 0);
+    lcd.write(0);
+    lcd.write(1);
+    lcd.print(consumptionPadding(current));
+    lcd.print(formatConsumption(current)); 
+    lcd.print(unit(speed));
   
-  // Print current
-  lcd.setCursor(0, 0);
-  lcd.write(0);
-  lcd.write(1);
-  lcd.print(consumptionPadding(current));
-  lcd.print(formatConsumption(current)); 
-  lcd.print(unit(speed));
-
-  if(distance_abs > 0) {
-    // Print average
-    lcd.setCursor(0, 1);
-    lcd.write(2);
-    lcd.print(" ");
-    lcd.print(consumptionPadding(average));
-    lcd.print(formatConsumption(average));
-    lcd.print(" l/100km");
+    if(distance_abs > 0) {
+      // Print average
+      lcd.setCursor(0, 1);
+      lcd.write(2);
+      lcd.print(" ");
+      lcd.print(consumptionPadding(average));
+      lcd.print(formatConsumption(average));
+      lcd.print(" l/100km ");
+    }
+  
+  //  delay(1000);
+  //
+  //  // Print speed
+  //  lcd.clear();
+  //  lcd.setCursor(0, 0);
+  //  lcd.print("Geschwindigkeit:");
+  //  lcd.setCursor(0, 1);
+  //  lcd.print(speed);
+  //  lcd.setCursor(3, 1);
+  //  lcd.print("km/h");
+  //
+  //  delay(1000);
   }
-//
-//  delay(1000);
-//
-//  // Print speed
-//  lcd.clear();
-//  lcd.setCursor(0, 0);
-//  lcd.print("Geschwindigkeit:");
-//  lcd.setCursor(0, 1);
-//  lcd.print(speed);
-//  lcd.setCursor(3, 1);
-//  lcd.print("km/h");
-//
-//  delay(1000);
 }
